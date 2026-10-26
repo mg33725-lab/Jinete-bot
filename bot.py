@@ -1649,11 +1649,15 @@ class QuickCustodyModal(discord.ui.Modal, title="✏️ Asignar o Ajustar Custod
         self.parent_view = parent_view
 
     async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
         pj = self.pj_input.value.strip()
         raw_qty = self.qty_input.value.strip()
         note = self.note_input.value.strip()
         if not raw_qty.isdigit():
-            await interaction.response.send_message("❌ La cantidad debe ser un número entero (ej: 0, 1, 5).", ephemeral=True)
+            await interaction.followup.send("❌ La cantidad debe ser un número entero (ej: 0, 1, 5).", ephemeral=True)
             return
         qty = int(raw_qty)
         ok, msg = db.set_dark_custody(pj, qty, interaction.user.name, note)
@@ -1662,22 +1666,15 @@ class QuickCustodyModal(discord.ui.Modal, title="✏️ Asignar o Ajustar Custod
         new_embed = ai_assistant.build_vault_embed()
 
         try:
-            if not interaction.response.is_done():
-                await interaction.response.edit_message(embed=new_embed, view=self.parent_view)
-            else:
-                await interaction.followup.send(msg, ephemeral=True)
-        except Exception as e:
-            logger.warning(f"Error updating vault embed via modal interaction: {e}")
+            await interaction.edit_original_response(embed=new_embed, view=self.parent_view)
+        except Exception:
             target_msg = getattr(self.parent_view, "message", None)
             if target_msg:
                 try:
                     await target_msg.edit(embed=new_embed, view=self.parent_view)
                 except Exception:
                     pass
-            if not interaction.response.is_done():
-                await interaction.response.send_message(msg, ephemeral=True)
-            else:
-                await interaction.followup.send(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
 
 class VaultView(discord.ui.View):
     def __init__(self, author_id: Optional[int] = None):
@@ -1837,11 +1834,15 @@ class QuickSetPointsModal(discord.ui.Modal, title="✏️ Ajustar Puntos de PJ")
         self.parent_view = parent_view
 
     async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
         pj = self.pj_input.value.strip()
         raw_pts = self.points_input.value.strip()
         clan = self.clan_input.value.strip() or None
         if not raw_pts.isdigit():
-            await interaction.response.send_message("❌ Los puntos deben ser un número entero (ej: 0, 10, 25).", ephemeral=True)
+            await interaction.followup.send("❌ Los puntos deben ser un número entero (ej: 0, 10, 25).", ephemeral=True)
             return
         pts = int(raw_pts)
         item = [{"pj_name": pj, "points": pts, "clan": clan or "DxMENTOR"}]
@@ -1851,22 +1852,15 @@ class QuickSetPointsModal(discord.ui.Modal, title="✏️ Ajustar Puntos de PJ")
         new_embed = ai_assistant.build_points_list_embed(clan=self.parent_view.clan, limit=self.parent_view.limit)
 
         try:
-            if not interaction.response.is_done():
-                await interaction.response.edit_message(embed=new_embed, view=self.parent_view)
-            else:
-                await interaction.followup.send(f"✅ Se actualizaron los puntos de **{pj}** a **{pts} pts**.", ephemeral=True)
-        except Exception as e:
-            logger.warning(f"Error updating points list embed via quick set modal: {e}")
+            await interaction.edit_original_response(embed=new_embed, view=self.parent_view)
+        except Exception:
             target_msg = getattr(self.parent_view, "message", None)
             if target_msg:
                 try:
                     await target_msg.edit(embed=new_embed, view=self.parent_view)
                 except Exception:
                     pass
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"✅ Se actualizaron los puntos de **{pj}** a **{pts} pts**.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"✅ Se actualizaron los puntos de **{pj}** a **{pts} pts**.", ephemeral=True)
+            await interaction.followup.send(f"✅ Se actualizaron los puntos de **{pj}** a **{pts} pts**.", ephemeral=True)
 
 class PointsListView(discord.ui.View):
     def __init__(self, author_id: Optional[int] = None, clan: Optional[str] = None, limit: int = 100):
@@ -3110,6 +3104,48 @@ async def on_message(message: discord.Message):
                         await message.reply(embeds=embeds_to_send[:10])
                         return
 
+                # ACCIONES MÚLTIPLES O COMBINADAS EN UN SOLO MENSAJE (ej: borrar varios PJs y unificar otros)
+                actions_list = intent_data.get("actions", [])
+                if isinstance(actions_list, list) and len(actions_list) > 1 and not has_image:
+                    action_results = []
+                    for act in actions_list:
+                        act_intent = act.get("intent")
+                        if act_intent == "DELETE_PLAYER":
+                            to_del = act.get("characters") or ([act.get("pj_name")] if act.get("pj_name") else [])
+                            for d_name in to_del:
+                                ok_del, msg_del = db.delete_player(d_name)
+                                action_results.append(f"🗑️ {msg_del}")
+                        elif act_intent == "LINK_PLAYERS":
+                            lp1 = act.get("pj_name")
+                            lp2 = act.get("target_pj")
+                            if lp1 and lp2:
+                                ok_l, msg_l, inf_l = db.link_players(lp1, lp2, unified_name=lp2)
+                                action_results.append(f"👥 {msg_l}")
+                        elif act_intent == "SET_POINTS":
+                            p_pj = act.get("pj_name")
+                            p_pts = act.get("points")
+                            p_clan = act.get("clan")
+                            p_dp = act.get("darks_paid")
+                            if p_pj:
+                                ok_sp, msg_sp = db.update_player_points(p_pj, new_points=p_pts, clan=p_clan, darks_paid=p_dp)
+                                action_results.append(f"✏️ {msg_sp}")
+                        elif act_intent == "PAY_DARK":
+                            pay_recips = act.get("recipients") or act.get("characters") or ([act.get("pj_name")] if act.get("pj_name") else [])
+                            for r in pay_recips:
+                                ok_pd, msg_pd = db.pay_player_dark(r, 1, message.author.name)
+                                action_results.append(f"🎁 {msg_pd}")
+
+                    if action_results:
+                        await auto_backup_database()
+                        embed = discord.Embed(
+                            title="✅ Acciones Múltiples Procesadas",
+                            description="\n".join(action_results[:25]),
+                            color=discord.Color.green()
+                        )
+                        embed.set_footer(text="Base de datos guardada y actualizada permanentemente.")
+                        await message.reply(embed=embed)
+                        return
+
                 # 1. LISTA GENERAL DE PUNTOS
                 if intent == "LIST_POINTS":
                     embed = ai_assistant.build_points_list_embed()
@@ -3434,14 +3470,19 @@ async def on_message(message: discord.Message):
 
                 # 10. ELIMINAR PERSONAJE
                 elif intent == "DELETE_PLAYER":
-                    pj = intent_data.get("pj_name")
-                    if pj:
-                        ok, msg = db.delete_player(pj)
+                    pjs_to_del = intent_data.get("characters") or ([intent_data.get("pj_name")] if intent_data.get("pj_name") else [])
+                    if pjs_to_del:
+                        del_msgs = []
+                        for pj in pjs_to_del:
+                            ok, msg = db.delete_player(pj)
+                            del_msgs.append(f"• {msg}")
+                        await auto_backup_database()
                         embed = discord.Embed(
-                            title="🗑️ Eliminar Personaje",
-                            description=msg,
-                            color=discord.Color.green() if ok else discord.Color.red()
+                            title="🗑️ Eliminación de Personaje(s)",
+                            description="\n".join(del_msgs),
+                            color=discord.Color.green()
                         )
+                        embed.set_footer(text="Base de datos guardada y actualizada permanentemente.")
                         await message.reply(embed=embed)
                         return
 
@@ -3573,7 +3614,8 @@ async def on_message(message: discord.Message):
                         if not check_is_admin(message.author, message.guild):
                             await message.reply("⛔ **Permiso denegado:** Solo los administradores autorizados pueden vincular personajes.")
                             return
-                        ok, msg, info = db.link_players(p1, p2)
+                        ok, msg, info = db.link_players(p1, p2, unified_name=p2)
+                        await auto_backup_database()
                         embed = discord.Embed(
                             title="👥 Vinculación de Personajes",
                             description=msg,

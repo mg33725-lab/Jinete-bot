@@ -63,8 +63,8 @@ Posibles intenciones ("intent"):
          - Drops del chat: "Guardian Angel", "Satan", "Seal of Sustenance", "Chaos", "Zen", "Jewel", "Ancient", "Coin".
          - Compradores/vendedores del chat global o post (ej: "VENDO BC7", "EVOSJc00").
          - Textos de interfaz como "FPS", "PING", "Level", "Server".
-10. "DELETE_PLAYER": El usuario pide eliminar o borrar un personaje (ej: "borrá a Player_1", "eliminá a TitanBK", "sacá a ese pj").
-    - Requiere: "pj_name" (personaje a borrar).
+10. "DELETE_PLAYER": El usuario pide eliminar o borrar uno o varios personajes (ej: "borrá a Player_1", "eliminá a Minocho99, EK_agus y Elanor", "sacá a ese pj").
+    - Requiere: "pj_name" (personaje a borrar) o "characters": ["pj1", "pj2", ...] (si son varios personajes a borrar).
 11. "SET_POINTS": El usuario pide ajustar, cambiar o fijar los puntos, clan o darks cobradas de uno o varios personajes manualmente (ej: "cambiale los puntos a masterr a 8", "poné a Camarlengo con 32 puntos (PolloKill)", "ajustá a Bonielf en 26 puntos y 4 darks cobradas", "cambiá el clan de Duraznita a PolloKill").
     - Requiere: "pj_name" (personaje).
     - Opcional: "points" (puntos a fijar), "clan" ("DxMENTOR" o "PolloKill") y "darks_paid" (número de darks cobradas).
@@ -81,10 +81,22 @@ Posibles intenciones ("intent"):
     - ¡REGLA CRÍTICA!: Esto es una TRANSFERENCIA DE INVENTARIO FÍSICO / CUSTODIA. NO resta puntos por cobrar a nadie ni es un cobro de evento.
 16. "VAULT_HISTORY": El usuario pide ver el historial de movimientos, transferencias o cargas del baúl/almacenamiento de darks (ej: "historial del baúl", "movimientos del baúl", "historial de darks almacenadas", "ver transferencias de darks").
 17. "RESET_VAULT": El usuario pide vaciar, limpiar o reiniciar a cero el baúl/almacenamiento de darks (ej: "reiniciar baúl", "vaciar baúl", "poner a cero el baúl de darks", "borrar darks almacenadas para empezar de cero").
-18. "LINK_PLAYERS": El usuario indica que dos personajes son de la misma persona o pide vincularlos/unirlos (ej: "vincula a Themami con Stormfly, son la misma persona", "uní las cuentas de Spark y Chispa", "Themami y Stormfly son el mismo jugador", "asociá a Themami con Stormfly").
-    - "pj_name": primer personaje (ej: "Themami").
-    - "target_pj": segundo personaje (ej: "Stormfly").
+18. "LINK_PLAYERS": El usuario indica que dos personajes son de la misma persona o pide vincularlos/unirlos (ej: "vincula a Themami con Stormfly, son la misma persona", "uní las cuentas de Spark y Chispa", "Themami y Stormfly son el mismo jugador", "asociá a Themami con Stormfly", "FairyElf es FairyLow, unifica esos puntos").
+    - "pj_name": primer personaje (ej: "FairyElf").
+    - "target_pj": segundo personaje (ej: "FairyLow").
 19. "CHAT": Saludo, ayuda o pregunta general.
+
+¡REGLA CRÍTICA PARA ACCIONES MÚLTIPLES O COMBINADAS EN UN MISMO MENSAJE!:
+Si el mensaje del usuario contiene más de una instrucción o acción (por ejemplo: borrar varios personajes Y además vincular/unir otros, o borrar y fijar puntos, o registrar varios pedidos):
+- DEBES incluir en el JSON la clave "actions": una lista con CADA UNA de las acciones que pidió el usuario.
+- Ejemplo para "borrame a Minocho99, EK_agus y Elanor. También FairyElf está mal, es FairyLow, unifica esos puntos":
+{
+  "intent": "DELETE_PLAYER",
+  "actions": [
+    {"intent": "DELETE_PLAYER", "characters": ["Minocho99", "EK_agus", "Elanor"]},
+    {"intent": "LINK_PLAYERS", "pj_name": "FairyElf", "target_pj": "FairyLow"}
+  ]
+}
 
 ¡REGLA PARA CONSULTAS MÚLTIPLES!:
 Si el usuario hace varias preguntas o consultas en el mismo mensaje (ej: "Decime la lista actual de puntos. Quiénes faltan pagar y quién tiene las darks", o "ranking y baúl"):
@@ -95,6 +107,7 @@ Responde ÚNICAMENTE un JSON válido (sin markdown ni texto extra):
 {
   "intent": "LIST_POINTS",
   "intents": ["LIST_POINTS"],
+  "actions": [],
   "pj_name": "nombre o null",
   "target_pj": "nombre o null",
   "recipients": [],
