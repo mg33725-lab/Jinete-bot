@@ -1,0 +1,17 @@
+# Environment & Secrets
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Temporary generated files
+ruleta_ev_*.gif
+temp_ocr_*.png
+temp_*.png
+*.zip
+*.pdf
