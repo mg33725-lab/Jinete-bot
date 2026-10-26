@@ -1603,28 +1603,26 @@ class EditVaultModal(discord.ui.Modal, title="📝 Editar Almacenamiento del Ba�
             await interaction.response.send_message("⚠️ No se detectaron líneas válidas. Formato: `Personaje: Cantidad`", ephemeral=True)
             return
 
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+
         ok, msg, total = db.bulk_set_dark_custody(entries, interaction.user.name)
         await auto_backup_database()
         import ai_assistant
         new_embed = ai_assistant.build_vault_embed()
 
         try:
-            if not interaction.response.is_done():
-                await interaction.response.edit_message(embed=new_embed, view=self.parent_view)
-            else:
-                await interaction.followup.send(msg, ephemeral=True)
-        except Exception as e:
-            logger.warning(f"Error updating vault embed via modal interaction: {e}")
+            await interaction.edit_original_response(embed=new_embed, view=self.parent_view)
+        except Exception:
             target_msg = getattr(self.parent_view, "message", None)
             if target_msg:
                 try:
                     await target_msg.edit(embed=new_embed, view=self.parent_view)
                 except Exception:
                     pass
-            if not interaction.response.is_done():
-                await interaction.response.send_message(msg, ephemeral=True)
-            else:
-                await interaction.followup.send(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
 
 class QuickCustodyModal(discord.ui.Modal, title="✏️ Asignar o Ajustar Custodia"):
     pj_input = discord.ui.TextInput(
@@ -1683,25 +1681,25 @@ class QuickCustodyModal(discord.ui.Modal, title="✏️ Asignar o Ajustar Custod
 
 class VaultView(discord.ui.View):
     def __init__(self, author_id: Optional[int] = None):
-        super().__init__(timeout=900) # 15 minutos activo
+        super().__init__(timeout=None) # Nunca expira (persistente)
         self.author_id = author_id
         self.message: Optional[discord.Message] = None
 
-    @discord.ui.button(label="📝 Editar Lista Baúl", style=discord.ButtonStyle.primary, emoji="📝")
+    @discord.ui.button(label="📝 Editar Lista Baúl", style=discord.ButtonStyle.primary, emoji="📝", custom_id="persistent_edit_vault_list")
     async def edit_vault_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar la custodia del baúl.", ephemeral=True)
             return
         await interaction.response.send_modal(EditVaultModal(self))
 
-    @discord.ui.button(label="✏️ Ajustar PJ", style=discord.ButtonStyle.secondary, emoji="✏️")
+    @discord.ui.button(label="✏️ Ajustar PJ", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="persistent_quick_custody")
     async def quick_custody(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar la custodia del baúl.", ephemeral=True)
             return
         await interaction.response.send_modal(QuickCustodyModal(self))
 
-    @discord.ui.button(label="🔄 Refrescar", style=discord.ButtonStyle.secondary, emoji="🔄")
+    @discord.ui.button(label="🔄 Refrescar", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="persistent_refresh_vault")
     async def refresh_vault(self, interaction: discord.Interaction, button: discord.ui.Button):
         import ai_assistant
         new_embed = ai_assistant.build_vault_embed()
@@ -1776,6 +1774,11 @@ class EditPointsListModal(discord.ui.Modal, title="📝 Editar Lista de Puntos")
         self.points_input.default = full_text[:3990]
 
     async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+
         text = self.points_input.value
         items = []
         for line in text.splitlines():
@@ -1790,7 +1793,7 @@ class EditPointsListModal(discord.ui.Modal, title="📝 Editar Lista de Puntos")
                 })
 
         if not items:
-            await interaction.response.send_message("⚠️ No se detectaron líneas válidas. Formato: `Personaje: Puntos (Clan)`", ephemeral=True)
+            await interaction.followup.send("⚠️ No se detectaron líneas válidas. Formato: `Personaje: Puntos (Clan)`", ephemeral=True)
             return
 
         count, summary = db.bulk_import_points(items, mode="SET", updated_by=interaction.user.name)
@@ -1799,22 +1802,15 @@ class EditPointsListModal(discord.ui.Modal, title="📝 Editar Lista de Puntos")
         new_embed = ai_assistant.build_points_list_embed(clan=self.parent_view.clan, limit=self.parent_view.limit)
 
         try:
-            if not interaction.response.is_done():
-                await interaction.response.edit_message(embed=new_embed, view=self.parent_view)
-            else:
-                await interaction.followup.send(f"✅ Se actualizaron los puntos de **{count}** personajes con éxito en la base de datos.", ephemeral=True)
-        except Exception as e:
-            logger.warning(f"Error updating points list embed via modal interaction: {e}")
+            await interaction.edit_original_response(embed=new_embed, view=self.parent_view)
+        except Exception:
             target_msg = getattr(self.parent_view, "message", None)
             if target_msg:
                 try:
                     await target_msg.edit(embed=new_embed, view=self.parent_view)
                 except Exception:
                     pass
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"✅ Se actualizaron los puntos de **{count}** personajes con éxito en la base de datos.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"✅ Se actualizaron los puntos de **{count}** personajes con éxito en la base de datos.", ephemeral=True)
+            await interaction.followup.send(f"✅ Se actualizaron los puntos de **{count}** personajes con éxito en la base de datos.", ephemeral=True)
 
 class QuickSetPointsModal(discord.ui.Modal, title="✏️ Ajustar Puntos de PJ"):
     pj_input = discord.ui.TextInput(
@@ -1874,27 +1870,27 @@ class QuickSetPointsModal(discord.ui.Modal, title="✏️ Ajustar Puntos de PJ")
 
 class PointsListView(discord.ui.View):
     def __init__(self, author_id: Optional[int] = None, clan: Optional[str] = None, limit: int = 100):
-        super().__init__(timeout=900) # 15 minutos activo
+        super().__init__(timeout=None) # Nunca expira (persistente)
         self.author_id = author_id
         self.clan = clan
         self.limit = limit
         self.message: Optional[discord.Message] = None
 
-    @discord.ui.button(label="📝 Editar Lista de Puntos", style=discord.ButtonStyle.primary, emoji="📝")
+    @discord.ui.button(label="📝 Editar Lista de Puntos", style=discord.ButtonStyle.primary, emoji="📝", custom_id="persistent_edit_points_list")
     async def edit_points_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar la lista de puntos.", ephemeral=True)
             return
         await interaction.response.send_modal(EditPointsListModal(self))
 
-    @discord.ui.button(label="✏️ Ajustar PJ", style=discord.ButtonStyle.secondary, emoji="✏️")
+    @discord.ui.button(label="✏️ Ajustar PJ", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="persistent_quick_set_points")
     async def quick_set_points(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar la lista de puntos.", ephemeral=True)
             return
         await interaction.response.send_modal(QuickSetPointsModal(self))
 
-    @discord.ui.button(label="🔄 Refrescar", style=discord.ButtonStyle.secondary, emoji="🔄")
+    @discord.ui.button(label="🔄 Refrescar", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="persistent_refresh_points")
     async def refresh_points(self, interaction: discord.Interaction, button: discord.ui.Button):
         import ai_assistant
         new_embed = ai_assistant.build_points_list_embed(clan=self.clan, limit=self.limit)
@@ -3025,6 +3021,23 @@ async def on_message(message: discord.Message):
                     "target_pj": link_p2
                 }
 
+            # Si se detectó una lista de personajes y puntos pegada directamente en el chat
+            pasted_points = []
+            if not has_image:
+                for line in clean_content.splitlines():
+                    parsed_res = parse_points_line(line)
+                    if parsed_res:
+                        p_name, p_pts, p_clan, p_dp = parsed_res
+                        pasted_points.append({"pj_name": p_name, "points": p_pts, "clan": p_clan, "darks_paid": p_dp})
+
+            if len(pasted_points) >= 2 and (not intent_data or intent_data.get("intent") in ["CHAT", "IMPORT_POINTS", "LIST_POINTS"]):
+                mode = "SET" if any(w in clean_content.lower() for w in ["fijar", "reemplazar", "actualizar", "cambiar", "nueva lista", "lista actual", "corregir", "puntos"]) or len(pasted_points) >= 3 else "ADD"
+                intent_data = {
+                    "intent": "IMPORT_POINTS",
+                    "mode": mode,
+                    "import_items": pasted_points
+                }
+
             # Fallback con OCR si Gemini no detectó personajes en las imágenes
             if has_image and (not intent_data or not intent_data.get("characters")):
                 from ocr_scanner import extract_names_from_image
@@ -3435,14 +3448,20 @@ async def on_message(message: discord.Message):
                 # 11. AJUSTAR PUNTOS MANUALMENTE
                 elif intent == "SET_POINTS":
                     pj = intent_data.get("pj_name")
-                    pts = int(intent_data.get("points", 0))
+                    raw_pts = intent_data.get("points")
+                    pts = int(raw_pts) if raw_pts is not None else None
+                    clan = intent_data.get("clan")
+                    raw_dp = intent_data.get("darks_paid")
+                    darks_paid = int(raw_dp) if raw_dp is not None else None
                     if pj:
-                        ok, msg = db.update_player_points(pj, pts)
+                        ok, msg = db.update_player_points(pj, new_points=pts, clan=clan, darks_paid=darks_paid)
+                        await auto_backup_database()
                         embed = discord.Embed(
-                            title="✏️ Ajustar Puntos",
+                            title="✏️ Puntos y Perfil Actualizados",
                             description=msg,
                             color=discord.Color.green() if ok else discord.Color.red()
                         )
+                        embed.set_footer(text="Base de datos guardada y actualizada permanentemente.")
                         await message.reply(embed=embed)
                         return
 
@@ -3450,13 +3469,18 @@ async def on_message(message: discord.Message):
                 elif intent == "IMPORT_POINTS":
                     items = intent_data.get("import_items", [])
                     mode = intent_data.get("mode", "ADD")
+                    lower_msg = message.content.lower()
+                    if any(w in lower_msg for w in ["fijar", "reemplazar", "actualizar", "cambiar", "nueva lista", "lista actual", "corregir", "nueva"]):
+                        mode = "SET"
                     if items:
                         count, summary = db.bulk_import_points(items, mode=mode, updated_by=message.author.name)
+                        await auto_backup_database()
                         embed = discord.Embed(
-                            title=f"📥 Lista Manual Procesada ({count} personajes)",
+                            title=f"📥 Lista de Puntos Actualizada ({count} personajes)",
                             description=f"Modo: **{'Sumar a puntos actuales (+)' if mode == 'ADD' else 'Reemplazar / Fijar puntos (=)'}**\n\n" + "\n".join(summary[:25]),
                             color=discord.Color.green()
                         )
+                        embed.set_footer(text="Base de datos guardada y actualizada permanentemente.")
                         await message.reply(embed=embed)
                         return
 
@@ -3581,6 +3605,9 @@ async def on_message(message: discord.Message):
 async def on_ready():
     await auto_restore_database_on_boot()
     db.init_db()
+    # Registrar vistas persistentes para que los botones NUNCA expiren
+    bot.add_view(PointsListView())
+    bot.add_view(VaultView())
     try:
         synced = await bot.tree.sync()
         print(f"🤖 Bot conectado como {bot.user} | Comandos sincronizados: {len(synced)}", flush=True)

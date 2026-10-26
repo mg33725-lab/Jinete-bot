@@ -919,20 +919,43 @@ def delete_player(pj_name: str) -> Tuple[bool, str]:
     conn.close()
     return True, f"Se eliminó completamente el personaje **{pj_name}** de la base de datos."
 
-def update_player_points(pj_name: str, new_points: int) -> Tuple[bool, str]:
+def update_player_points(pj_name: str, new_points: Optional[int] = None, clan: Optional[str] = None, darks_paid: Optional[int] = None) -> Tuple[bool, str]:
     pj_name = resolve_pj_name(pj_name)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM players WHERE pj_name = ? COLLATE NOCASE", (pj_name.strip(),))
     existing = cursor.fetchone()
-    if not existing:
-        conn.close()
-        return False, f"El personaje '{pj_name}' no existe en la base de datos."
+    now = datetime.now().isoformat()
 
-    cursor.execute("UPDATE players SET current_points = ? WHERE pj_name = ? COLLATE NOCASE", (max(0, new_points), pj_name.strip()))
+    if not existing:
+        pts = max(0, new_points) if new_points is not None else 0
+        cl = resolve_clan_name(clan or "DxMENTOR")
+        dp = max(0, darks_paid) if darks_paid is not None else 0
+        total_hist = pts + (dp * 10)
+        cursor.execute("""
+            INSERT INTO players (pj_name, current_points, total_points_history, darks_paid, events_attended, raffle_streak_lost, last_event_at, clan)
+            VALUES (?, ?, ?, ?, 0, 0, ?, ?)
+        """, (pj_name.strip(), pts, total_hist, dp, now, cl))
+        conn.commit()
+        conn.close()
+        d_str = f" ({dp}D cobradas)" if dp > 0 else ""
+        return True, f"Se creó el personaje **{pj_name}** `[{cl}]` con **{pts} pts**{d_str}."
+
+    target_pts = max(0, new_points) if new_points is not None else existing["current_points"]
+    target_clan = resolve_clan_name(clan) if clan else (existing["clan"] or "DxMENTOR")
+    target_darks = max(0, darks_paid) if darks_paid is not None else existing["darks_paid"]
+    total_hist = max(existing["total_points_history"], target_pts + (target_darks * 10))
+
+    cursor.execute("""
+        UPDATE players
+        SET current_points = ?, total_points_history = ?, darks_paid = ?, last_event_at = ?, clan = ?
+        WHERE pj_name = ? COLLATE NOCASE
+    """, (target_pts, total_hist, target_darks, now, target_clan, pj_name.strip()))
     conn.commit()
     conn.close()
-    return True, f"Se actualizaron los puntos de **{pj_name}** a **{max(0, new_points)} pts**."
+
+    d_info = f" ({target_darks}D cobrada{'s' if target_darks > 1 else ''})" if target_darks > 0 else ""
+    return True, f"Se actualizó **{pj_name}** `[{target_clan}]`: **{target_pts} pts**{d_info}."
 
 def bulk_import_points(items: List[Dict], mode: str = "ADD", updated_by: str = "") -> Tuple[int, List[str]]:
     """

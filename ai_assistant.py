@@ -65,11 +65,12 @@ Posibles intenciones ("intent"):
          - Textos de interfaz como "FPS", "PING", "Level", "Server".
 10. "DELETE_PLAYER": El usuario pide eliminar o borrar un personaje (ej: "borrá a Player_1", "eliminá a TitanBK", "sacá a ese pj").
     - Requiere: "pj_name" (personaje a borrar).
-11. "SET_POINTS": El usuario pide ajustar o cambiar los puntos de un personaje manualmente (ej: "cambiale los puntos a masterr a 8").
-    - Requiere: "pj_name" y "points".
+11. "SET_POINTS": El usuario pide ajustar, cambiar o fijar los puntos, clan o darks cobradas de uno o varios personajes manualmente (ej: "cambiale los puntos a masterr a 8", "poné a Camarlengo con 32 puntos (PolloKill)", "ajustá a Bonielf en 26 puntos y 4 darks cobradas", "cambiá el clan de Duraznita a PolloKill").
+    - Requiere: "pj_name" (personaje).
+    - Opcional: "points" (puntos a fijar), "clan" ("DxMENTOR" o "PolloKill") y "darks_paid" (número de darks cobradas).
 12. "IMPORT_POINTS": El usuario pasa una lista manual de personajes con sus puntos (en texto o en imagen/foto de excel, whatsapp o bloc de notas) para cargarlos o sumarlos.
-    - Requiere: "import_items": [{"pj_name": "...", "points": 10}, ...]
-    - "mode": "ADD" (si dice sumar, agregar, o por defecto) o "SET" (si dice reemplazar, fijar o puntos iniciales).
+    - Requiere: "import_items": [{"pj_name": "...", "points": 10, "clan": "DxMENTOR", "darks_paid": 0}, ...]
+    - "mode": "SET" (si dice reemplazar, fijar, actualizar, corregir o lista actual) o "ADD" (si dice sumar o agregar).
 13. "SPIN_ROULETTE": El usuario pide girar una ruleta animada entre una lista de personajes (ej: "girá una ruleta entre masterr, Buferit4 y Hayiku", "ruleta con...").
     - Requiere: "characters": ["nombre1", "nombre2", ...]
 14. "RESET_HISTORY": El usuario pide reiniciar todos los puntos, limpiar o borrar el historial de eventos del gremio (ej: "reiniciar todos los puntos", "limpiar historial", "borrar todos los eventos y empezar de nuevo").
