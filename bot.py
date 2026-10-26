@@ -1682,21 +1682,27 @@ class VaultView(discord.ui.View):
         self.author_id = author_id
         self.message: Optional[discord.Message] = None
 
-    @discord.ui.button(label="📝 Editar Lista Baúl", style=discord.ButtonStyle.primary, emoji="📝", custom_id="persistent_edit_vault_list")
+    @discord.ui.button(label="Editar Lista Baúl", style=discord.ButtonStyle.primary, emoji="📝", custom_id="persistent_edit_vault_list")
     async def edit_vault_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar la custodia del baúl.", ephemeral=True)
             return
-        await interaction.response.send_modal(EditVaultModal(self))
+        try:
+            await interaction.response.send_modal(EditVaultModal(self))
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ Error al abrir el editor: {e}", ephemeral=True)
 
-    @discord.ui.button(label="✏️ Ajustar PJ", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="persistent_quick_custody")
+    @discord.ui.button(label="Ajustar PJ", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="persistent_quick_custody")
     async def quick_custody(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar la custodia del baúl.", ephemeral=True)
             return
-        await interaction.response.send_modal(QuickCustodyModal(self))
+        try:
+            await interaction.response.send_modal(QuickCustodyModal(self))
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ Error al abrir el editor: {e}", ephemeral=True)
 
-    @discord.ui.button(label="🔄 Refrescar", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="persistent_refresh_vault")
+    @discord.ui.button(label="Refrescar", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="persistent_refresh_vault")
     async def refresh_vault(self, interaction: discord.Interaction, button: discord.ui.Button):
         import ai_assistant
         new_embed = ai_assistant.build_vault_embed()
@@ -1751,7 +1757,7 @@ class EditPointsListModal(discord.ui.Modal, title="📝 Editar Lista de Puntos")
     points_input = discord.ui.TextInput(
         label="Jugadores y Puntos (un PJ por línea)",
         style=discord.TextStyle.paragraph,
-        placeholder="Ejemplo:\nBonielf: 6 (PolloKill) (4D cobradas)\nBuferita: 21 (DxMENTOR) (2D cobradas)\nCamarlengo: 32 (PolloKill)",
+        placeholder="Ej: Bonielf: 6 (PolloKill) (4D cobradas)\nCamarlengo: 32 (PolloKill)",
         required=True,
         max_length=4000
     )
@@ -1870,21 +1876,27 @@ class PointsListView(discord.ui.View):
         self.limit = limit
         self.message: Optional[discord.Message] = None
 
-    @discord.ui.button(label="📝 Editar Lista de Puntos", style=discord.ButtonStyle.primary, emoji="📝", custom_id="persistent_edit_points_list")
+    @discord.ui.button(label="Editar Lista de Puntos", style=discord.ButtonStyle.primary, emoji="📝", custom_id="persistent_edit_points_list")
     async def edit_points_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar la lista de puntos.", ephemeral=True)
             return
-        await interaction.response.send_modal(EditPointsListModal(self))
+        try:
+            await interaction.response.send_modal(EditPointsListModal(self))
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ Error al abrir el editor: {e}", ephemeral=True)
 
-    @discord.ui.button(label="✏️ Ajustar PJ", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="persistent_quick_set_points")
+    @discord.ui.button(label="Ajustar PJ", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="persistent_quick_set_points")
     async def quick_set_points(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not check_is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar la lista de puntos.", ephemeral=True)
             return
-        await interaction.response.send_modal(QuickSetPointsModal(self))
+        try:
+            await interaction.response.send_modal(QuickSetPointsModal(self))
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ Error al abrir el editor: {e}", ephemeral=True)
 
-    @discord.ui.button(label="🔄 Refrescar", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="persistent_refresh_points")
+    @discord.ui.button(label="Refrescar", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="persistent_refresh_points")
     async def refresh_points(self, interaction: discord.Interaction, button: discord.ui.Button):
         import ai_assistant
         new_embed = ai_assistant.build_points_list_embed(clan=self.clan, limit=self.limit)
