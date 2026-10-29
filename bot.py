@@ -371,15 +371,15 @@ def extract_event_details(text: str) -> Tuple[Optional[int], Optional[str], Opti
         darks = word_to_num.get(val, int(val) if val.isdigit() else 1)
 
     # 2. Custodia / Holder
-    m_holder = re.search(r'(?:tiene|las tiene|quedaron a|custodia de|se las qued[oó])\s+([A-Za-z0-9_\[\]]+)', text, re.IGNORECASE)
+    m_holder = re.search(r'(?:tiene|las tiene|la tiene|lo tiene|quedaron a|custodia de|se las qued[oó]|se la qued[oó]|se lo qued[oó])\s+([A-Za-zÀ-ÿ0-9_\[\]/\-]+)', text, re.IGNORECASE)
     if m_holder:
-        cand = m_holder.group(1)
+        cand = m_holder.group(1).translate(str.maketrans("áéíóúÁÉÍÓÚ", "aeiouAEIOU"))
         if cand.lower() not in ['las', 'los', 'la', 'el', 'dos', 'tres', 'darks', 'un', 'una']:
             holder = cand
     if not holder:
-        m_holder2 = re.search(r'tiene\s+([A-Za-z0-9_\[\]]+)\s+las', text, re.IGNORECASE)
+        m_holder2 = re.search(r'tiene\s+([A-Za-zÀ-ÿ0-9_\[\]/\-]+)\s+las', text, re.IGNORECASE)
         if m_holder2:
-            holder = m_holder2.group(1)
+            holder = m_holder2.group(1).translate(str.maketrans("áéíóúÁÉÍÓÚ", "aeiouAEIOU"))
 
     # 3. Nombre de evento
     m_ev = re.search(r'\b((?:Frozen|Kundun|Medusa|Selupan|Lord|Erohim|Balgass|BC\s*\d*|DS\s*\d*|CC\s*\d*|Invasion|Maya|Nightmare|Kantarus))\b', text, re.IGNORECASE)
@@ -645,8 +645,8 @@ def extract_link_players(text: str) -> Tuple[Optional[str], Optional[str]]:
     - 'Themami y Stormfly son la misma persona' -> ('Themami', 'Stormfly')
     - 'asociar Themami a Stormfly' -> ('Themami', 'Stormfly')
     """
-    clean = text.strip()
-    stop = {'a', 'el', 'la', 'las', 'los', 'del', 'al', 'que', 'son', 'de', 'para'}
+    clean = re.sub(r'\s*/\s*', '/', text.strip())
+    stop = {'a', 'el', 'la', 'las', 'los', 'del', 'al', 'que', 'son', 'de', 'para', 'es'}
 
     # Patrón 1: vincula/asocia/uni/junta [a] PJ1 con/a/y PJ2
     m1 = re.search(r'(?:vincul[aá]|asoci[aá]|un[ií]|junt[aá]|conect[aá])\s+(?:a\s+)?([A-Za-z0-9_\-\./]+)\s+(?:con|a|y)\s+([A-Za-z0-9_\-\./]+)', clean, re.I)
@@ -655,8 +655,8 @@ def extract_link_players(text: str) -> Tuple[Optional[str], Optional[str]]:
         if p1.lower() not in stop and p2.lower() not in stop and len(p1) >= 2 and len(p2) >= 2:
             return p1, p2
 
-    # Patrón 2: PJ1 y PJ2 son la misma persona
-    m2 = re.search(r'([A-Za-z0-9_\-\./]+)\s+y\s+([A-Za-z0-9_\-\./]+)\s+son\s+(?:la\s+misma\s+persona|el\s+mismo\s+jugador|la\s+misma\s+cuenta|el\s+mismo)', clean, re.I)
+    # Patrón 2: PJ1 y/es PJ2 son/la misma persona
+    m2 = re.search(r'([A-Za-z0-9_\-\./]+)\s+(?:y|es|con)\s+([A-Za-z0-9_\-\./]+)[,\s]+(?:son\s+)?(?:la\s+misma\s+persona|el\s+mismo\s+jugador|la\s+misma\s+cuenta|el\s+mismo)', clean, re.I)
     if m2:
         p1, p2 = m2.group(1).strip(" ,:."), m2.group(2).strip(" ,:.")
         if p1.lower() not in stop and p2.lower() not in stop and len(p1) >= 2 and len(p2) >= 2:

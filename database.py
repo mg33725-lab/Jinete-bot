@@ -301,8 +301,8 @@ def link_players(pj1: str, pj2: str, unified_name: Optional[str] = None) -> Tupl
     Vincula dos personajes que pertenecen a la misma persona (ej: Themami con Stormfly).
     Unifica puntos, historial de eventos, pagos, custodia de baúl y registra alias bidireccionales.
     """
-    pj1 = pj1.strip()
-    pj2 = pj2.strip()
+    pj1 = re.sub(r'\s*/\s*', '/', pj1.strip())
+    pj2 = re.sub(r'\s*/\s*', '/', pj2.strip())
     if not pj1 or not pj2:
         return False, "Debes especificar ambos personajes para vincularlos.", {}
     if pj1.lower() == pj2.lower():
@@ -315,6 +315,27 @@ def link_players(pj1: str, pj2: str, unified_name: Optional[str] = None) -> Tupl
 
     can1 = resolve_pj_name(pj1)
     can2 = resolve_pj_name(pj2)
+
+    # Si ambos resolvieron al mismo nombre (ej: porque uno era 'Buferita/jinete' y 'jinete' existía aparte en players),
+    # verificar si existen dos filas distintas en players que correspondan a pj1, pj2 o sus sub-partes con '/'
+    if can1.lower() == can2.lower():
+        candidates_to_check = []
+        for token in [pj1, pj2, can1, can2]:
+            if token and token not in candidates_to_check:
+                candidates_to_check.append(token)
+            if "/" in token:
+                for sub in token.split("/"):
+                    s = sub.strip()
+                    if s and s not in candidates_to_check:
+                        candidates_to_check.append(s)
+        distinct_players = []
+        for cand in candidates_to_check:
+            cursor.execute("SELECT pj_name FROM players WHERE pj_name = ? COLLATE NOCASE", (cand,))
+            r_cand = cursor.fetchone()
+            if r_cand and r_cand["pj_name"].lower() not in [dp.lower() for dp in distinct_players]:
+                distinct_players.append(r_cand["pj_name"])
+        if len(distinct_players) >= 2:
+            can1, can2 = distinct_players[0], distinct_players[1]
 
     if can1.lower() == can2.lower():
         conn.close()
@@ -343,13 +364,9 @@ def link_players(pj1: str, pj2: str, unified_name: Optional[str] = None) -> Tupl
     # Determinar nombre unificado priorizando al personaje principal con mayor trayectoria si no se forzó uno
     if unified_name and unified_name.strip():
         target = unified_name.strip()
-    elif "/" in can2:
-        target = can2
-    elif "/" in can1:
-        target = can1
     elif p1 and p2:
-        score1 = ((p1["darks_paid"] or 0) * 10 + (p1["current_points"] or 0), p1["events_attended"] or 0, len(can1))
-        score2 = ((p2["darks_paid"] or 0) * 10 + (p2["current_points"] or 0), p2["events_attended"] or 0, len(can2))
+        score1 = ((p1["darks_paid"] or 0) * 10 + (p1["current_points"] or 0), p1["events_attended"] or 0, 1 if "/" in can1 else 0, len(can1))
+        score2 = ((p2["darks_paid"] or 0) * 10 + (p2["current_points"] or 0), p2["events_attended"] or 0, 1 if "/" in can2 else 0, len(can2))
         target = can1 if score1 >= score2 else can2
     elif p1:
         target = can1
@@ -479,27 +496,52 @@ RESERVED_PLAYER_WORDS = {
 }
 
 def resolve_pj_name(name: str) -> str:
-    cleaned = name.strip()
+    cleaned = re.sub(r'\s*/\s*', '/', name.strip())
     if not cleaned or cleaned.lower() in RESERVED_PLAYER_WORDS:
         return cleaned
+    unaccented = cleaned.translate(str.maketrans("áéíóúÁÉÍÓÚ", "aeiouAEIOU"))
     conn = get_connection()
     cursor = conn.cursor()
 
-    # 1. Buscar en aliases
-    cursor.execute("SELECT canonical_pj_name FROM player_aliases WHERE alias = ? COLLATE NOCASE", (cleaned,))
-    row = cursor.fetchone()
-    if row:
-        canonical = row["canonical_pj_name"]
-        conn.close()
-        return canonical
+    # 1. Buscar directamente en tabla players (case-insensitive, con y sin tilde)
+    for q_name in ([cleaned, unaccented] if unaccented != cleaned else [cleaned]):
+        cursor.execute("SELECT pj_name FROM players WHERE pj_name = ? COLLATE NOCASE", (q_name,))
+        row = cursor.fetchone()
+        if row:
+            canonical = row["pj_name"]
+            conn.close()
+            return canonical
 
-    # 2. Buscar en tabla players (case-insensitive)
-    cursor.execute("SELECT pj_name FROM players WHERE pj_name = ? COLLATE NOCASE", (cleaned,))
-    row = cursor.fetchone()
-    if row:
-        canonical = row["pj_name"]
-        conn.close()
-        return canonical
+    # 2. Buscar en aliases
+    for q_name in ([cleaned, unaccented] if unaccented != cleaned else [cleaned]):
+        cursor.execute("SELECT canonical_pj_name FROM player_aliases WHERE alias = ? COLLATE NOCASE", (q_name,))
+        row = cursor.fetchone()
+        if row:
+            canonical = row["canonical_pj_name"]
+            conn.close()
+            return canonical
+
+    # 2b. Si el nombre consultado viene con '/' (ej: 'Buferita/jinete') y una de sus partes ya existe en players o aliases
+    if "/" in cleaned:
+        for sub_raw in cleaned.split("/"):
+            sub_c = sub_raw.strip()
+            if not sub_c or sub_c.lower() in RESERVED_PLAYER_WORDS:
+                continue
+            cursor.execute("SELECT pj_name FROM players WHERE pj_name = ? COLLATE NOCASE", (sub_c,))
+            r_sub = cursor.fetchone()
+            if not r_sub:
+                cursor.execute("SELECT canonical_pj_name AS pj_name FROM player_aliases WHERE alias = ? COLLATE NOCASE", (sub_c,))
+                r_sub = cursor.fetchone()
+            if r_sub:
+                canonical = r_sub["pj_name"]
+                for other_sub in cleaned.split("/"):
+                    os_clean = other_sub.strip()
+                    if os_clean and os_clean.lower() != canonical.lower() and os_clean.lower() not in RESERVED_PLAYER_WORDS:
+                        cursor.execute("INSERT OR REPLACE INTO player_aliases (alias, canonical_pj_name) VALUES (?, ?)", (os_clean, canonical))
+                cursor.execute("INSERT OR REPLACE INTO player_aliases (alias, canonical_pj_name) VALUES (?, ?)", (cleaned, canonical))
+                conn.commit()
+                conn.close()
+                return canonical
 
     # Obtener todos los jugadores para análisis de sub-partes y difflib
     cursor.execute("SELECT pj_name FROM players")
