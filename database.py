@@ -196,6 +196,106 @@ def add_alias(alias: str, canonical_pj_name: str) -> Tuple[bool, str]:
     conn.close()
     return True, f"✅ Se vinculó el alias **'{alias}'** al personaje principal **'{canonical_real}'**."
 
+def rename_player(old_name: str, new_name: str) -> Tuple[bool, str, Dict[str, Any]]:
+    """
+    Cambia el nombre principal (canónico) de un personaje en toda la base de datos
+    y registra el nombre anterior como alias para no perder historial ni futuros eventos.
+    Incluso funciona si el nuevo nombre ya figuraba como alias del viejo.
+    """
+    old_name = old_name.strip()
+    new_name = new_name.strip()
+    if not old_name or not new_name:
+        return False, "Debes especificar el nombre actual y el nuevo nombre.", {}
+
+    can_old = resolve_pj_name(old_name)
+    can_new = resolve_pj_name(new_name)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM players WHERE pj_name = ? COLLATE NOCASE", (can_old,))
+    p_old = cursor.fetchone()
+    if not p_old:
+        cursor.execute("SELECT * FROM players WHERE pj_name = ? COLLATE NOCASE", (old_name,))
+        p_old = cursor.fetchone()
+        if p_old:
+            can_old = p_old["pj_name"]
+
+    if not p_old:
+        conn.close()
+        return False, f"❌ No se encontró al personaje **'{old_name}'** en la base de datos.", {}
+
+    # Si el nuevo nombre pertenece a OTRO jugador distinto que ya existe en players, unificarlos bajo new_name
+    cursor.execute("SELECT * FROM players WHERE pj_name = ? COLLATE NOCASE", (can_new,))
+    p_new = cursor.fetchone()
+    if p_new and can_old.lower() != can_new.lower():
+        conn.close()
+        return link_players(can_old, can_new, unified_name=new_name)
+
+    # Renombrar directamente el registro principal de can_old a new_name
+    pts = p_old["current_points"]
+    tot = p_old["total_points_history"]
+    darks = p_old["darks_paid"]
+    att = p_old["events_attended"]
+    clan = resolve_clan_name(p_old["clan"] if p_old["clan"] else "DxMENTOR")
+    disc_id = p_old["discord_id"]
+
+    if can_old.lower() == new_name.lower():
+        # Cambio solo de mayúsculas/minúsculas
+        cursor.execute("UPDATE players SET pj_name = ? WHERE pj_name = ? COLLATE NOCASE", (new_name, can_old))
+    else:
+        cursor.execute("""
+            INSERT INTO players (pj_name, discord_id, current_points, total_points_history, darks_paid, events_attended, clan)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(pj_name) DO UPDATE SET
+                discord_id = COALESCE(excluded.discord_id, players.discord_id),
+                current_points = excluded.current_points,
+                total_points_history = excluded.total_points_history,
+                darks_paid = excluded.darks_paid,
+                events_attended = excluded.events_attended,
+                clan = excluded.clan
+        """, (new_name, disc_id, pts, tot, darks, att, clan))
+        cursor.execute("DELETE FROM players WHERE pj_name = ? COLLATE NOCASE", (can_old,))
+
+    cursor.execute("UPDATE event_participants SET pj_name = ? WHERE pj_name = ? COLLATE NOCASE", (new_name, can_old))
+    cursor.execute("UPDATE payouts SET pj_name = ? WHERE pj_name = ? COLLATE NOCASE", (new_name, can_old))
+
+    cursor.execute("SELECT holder, darks_count, note FROM dark_vault WHERE holder = ? COLLATE NOCASE", (can_old,))
+    v_old = cursor.fetchone()
+    if v_old and can_old.lower() != new_name.lower():
+        cursor.execute("DELETE FROM dark_vault WHERE holder = ? COLLATE NOCASE", (can_old,))
+        cursor.execute("""
+            INSERT INTO dark_vault (holder, darks_count, updated_by, note)
+            VALUES (?, ?, 'Sistema', ?)
+            ON CONFLICT(holder) DO UPDATE SET darks_count = dark_vault.darks_count + excluded.darks_count
+        """, (new_name, v_old["darks_count"], v_old["note"] or "Renombrado"))
+
+    cursor.execute("UPDATE vault_transactions SET from_holder = ? WHERE from_holder = ? COLLATE NOCASE", (new_name, can_old))
+    cursor.execute("UPDATE vault_transactions SET to_holder = ? WHERE to_holder = ? COLLATE NOCASE", (new_name, can_old))
+
+    cursor.execute("UPDATE player_aliases SET canonical_pj_name = ? WHERE canonical_pj_name = ? COLLATE NOCASE", (new_name, can_old))
+    cursor.execute("DELETE FROM player_aliases WHERE alias = ? COLLATE NOCASE", (new_name,))
+
+    for a in {can_old, old_name}:
+        if a and a.lower() != new_name.lower():
+            cursor.execute("""
+                INSERT INTO player_aliases (alias, canonical_pj_name)
+                VALUES (?, ?)
+                ON CONFLICT(alias) DO UPDATE SET canonical_pj_name = excluded.canonical_pj_name
+            """, (a, new_name))
+
+    conn.commit()
+    conn.close()
+
+    info = {
+        "canonical": new_name,
+        "combined_points": pts,
+        "pj1": can_old,
+        "pj2": new_name,
+        "clan": clan
+    }
+    return True, f"✅ Se cambió el nombre de **'{can_old}'** a **'{new_name}'** (conservando sus **{pts} pts** y **{darks} Darks cobradas**).", info
+
 def link_players(pj1: str, pj2: str, unified_name: Optional[str] = None) -> Tuple[bool, str, Dict[str, Any]]:
     """
     Vincula dos personajes que pertenecen a la misma persona (ej: Themami con Stormfly).
@@ -206,6 +306,8 @@ def link_players(pj1: str, pj2: str, unified_name: Optional[str] = None) -> Tupl
     if not pj1 or not pj2:
         return False, "Debes especificar ambos personajes para vincularlos.", {}
     if pj1.lower() == pj2.lower():
+        if pj1 != pj2:
+            return rename_player(pj1, pj2)
         return False, "No puedes vincular un personaje consigo mismo.", {}
 
     conn = get_connection()
@@ -216,7 +318,13 @@ def link_players(pj1: str, pj2: str, unified_name: Optional[str] = None) -> Tupl
 
     if can1.lower() == can2.lower():
         conn.close()
-        return True, f"ℹ️ Los personajes **'{pj1}'** y **'{pj2}'** ya se encuentran vinculados a **'{can1}'**.", {"canonical": can1}
+        # Si el usuario pidió renombrar a un alias que ya apuntaba a can1 (ej: cambiar 'pepe' a 'Peperulo')
+        desired = unified_name.strip() if unified_name else None
+        if desired and desired != can1:
+            return rename_player(can1, desired)
+        if pj2 != can1 and pj1.lower() == can1.lower():
+            return rename_player(can1, pj2)
+        return True, f"ℹ️ Los personajes **'{pj1}'** y **'{pj2}'** ya se encuentran vinculados bajo **'{can1}'**.", {"canonical": can1}
 
     cursor.execute("SELECT * FROM players WHERE pj_name = ? COLLATE NOCASE", (can1,))
     p1 = cursor.fetchone()
@@ -225,22 +333,28 @@ def link_players(pj1: str, pj2: str, unified_name: Optional[str] = None) -> Tupl
 
     # Si ninguno existe en players
     if not p1 and not p2:
-        target = unified_name.strip() if unified_name else f"{can2}/{can1}"
+        target = unified_name.strip() if unified_name else can1
         conn.close()
-        add_player(target, clan="Mentores")
+        add_player(target, clan="DxMENTOR")
         add_alias(can1, target)
         add_alias(can2, target)
         return True, f"✅ Se vincularon **{can1}** y **{can2}** bajo **{target}**.", {"canonical": target, "points": 0}
 
-    # Determinar nombre unificado
+    # Determinar nombre unificado priorizando al personaje principal con mayor trayectoria si no se forzó uno
     if unified_name and unified_name.strip():
         target = unified_name.strip()
     elif "/" in can2:
         target = can2
     elif "/" in can1:
         target = can1
+    elif p1 and p2:
+        score1 = ((p1["darks_paid"] or 0) * 10 + (p1["current_points"] or 0), p1["events_attended"] or 0, len(can1))
+        score2 = ((p2["darks_paid"] or 0) * 10 + (p2["current_points"] or 0), p2["events_attended"] or 0, len(can2))
+        target = can1 if score1 >= score2 else can2
+    elif p1:
+        target = can1
     else:
-        target = f"{can2}/{can1}"
+        target = can2
 
     pts1 = p1["current_points"] if p1 else 0
     pts2 = p2["current_points"] if p2 else 0

@@ -671,6 +671,37 @@ def extract_link_players(text: str) -> Tuple[Optional[str], Optional[str]]:
 
     return None, None
 
+def extract_rename_player(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Detecta intenciones de renombrar un personaje:
+    - 'Cambiale el nombre a pepe y ponele Peperulo' -> ('pepe', 'Peperulo')
+    - 'cambiale el nombre a pepe por Peperulo' -> ('pepe', 'Peperulo')
+    - 'renombrá a pepe como Peperulo' -> ('pepe', 'Peperulo')
+    - 'cambiá el nombre de pepe a Peperulo' -> ('pepe', 'Peperulo')
+    """
+    clean = text.strip()
+    stop = {'a', 'el', 'la', 'las', 'los', 'del', 'al', 'que', 'son', 'de', 'para', 'nombre', 'personaje', 'pj'}
+
+    patterns = [
+        r'cambi[aá](?:le|r)?\s+el\s+nombre\s+(?:a|de)\s+([A-Za-z0-9_\-\./]+)\s+(?:y\s+ponele|por|a|como)\s+([A-Za-z0-9_\-\./]+)',
+        r'renombr[aá](?:r)?\s+(?:a\s+)?([A-Za-z0-9_\-\./]+)\s+(?:como|por|a|y\s+ponele)\s+([A-Za-z0-9_\-\./]+)',
+        r'modific[aá](?:le|r)?\s+el\s+nombre\s+(?:a|de)\s+([A-Za-z0-9_\-\./]+)\s+(?:por|a|como|y\s+ponele)\s+([A-Za-z0-9_\-\./]+)',
+        r'ponele\s+(?:de\s+nombre\s+)?([A-Za-z0-9_\-\./]+)\s+a\s+([A-Za-z0-9_\-\./]+)',
+        r'([A-Za-z0-9_\-\./]+)\s+est[aá]\s+mal(?:\s+escrito)?[, ]+(?:en\s+realidad\s+)?(?:es|ponele|va)\s+([A-Za-z0-9_\-\./]+)',
+    ]
+    for idx, pat in enumerate(patterns):
+        m = re.search(pat, clean, re.I)
+        if m:
+            if idx == 3:
+                # 'ponele Nuevo a Viejo' -> (Viejo, Nuevo)
+                old_p, new_p = m.group(2).strip(" ,:."), m.group(1).strip(" ,:.")
+            else:
+                old_p, new_p = m.group(1).strip(" ,:."), m.group(2).strip(" ,:.")
+            if old_p.lower() not in stop and new_p.lower() not in stop and len(old_p) >= 2 and len(new_p) >= 2:
+                return old_p, new_p
+
+    return None, None
+
 def detect_query_intents(text: str) -> List[str]:
     """Detecta si el mensaje del usuario pide múltiples consultas simultáneas (puntos, deudas y/o baúl)."""
     intents = []
@@ -2589,6 +2620,30 @@ async def cmd_vincular(interaction: discord.Interaction, personaje: str):
     )
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="renombrar", description="Cambia el nombre de un personaje conservando todos sus puntos, darks e historial.")
+@app_commands.describe(
+    nombre_actual="Nombre actual del personaje (ej: pepe)",
+    nuevo_nombre="Nuevo nombre que tendrá el personaje (ej: Peperulo)"
+)
+async def cmd_renombrar(interaction: discord.Interaction, nombre_actual: str, nuevo_nombre: str):
+    if not check_is_admin(interaction.user, interaction.guild):
+        await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden renombrar personajes.", ephemeral=True)
+        return
+    await interaction.response.defer()
+    ok, msg, info = db.rename_player(nombre_actual, nuevo_nombre)
+    if ok:
+        await auto_backup_database()
+    embed = discord.Embed(
+        title="✏️ Cambio de Nombre de Personaje",
+        description=msg,
+        color=discord.Color.green() if ok else discord.Color.red()
+    )
+    if ok and info.get("canonical"):
+        embed.add_field(name="🆔 Nuevo Nombre", value=f"**`{info['canonical']}`**", inline=True)
+        embed.add_field(name="⭐ Puntos Totales", value=f"**{info.get('combined_points', 0)} pts**", inline=True)
+        embed.add_field(name="🏛️ Clan", value=f"{info.get('clan', 'DxMENTOR')}", inline=True)
+    await interaction.followup.send(embed=embed)
+
 @bot.tree.command(name="baul", description="Muestra quiénes tienen en custodia las darks físicas del gremio.")
 async def cmd_baul(interaction: discord.Interaction):
     import ai_assistant
@@ -2995,6 +3050,7 @@ async def on_message(message: discord.Message):
             payout_holder, payout_recips, payout_darks = extract_payout_details(clean_content)
             custody_list = extract_custody_list(clean_content)
             link_p1, link_p2 = extract_link_players(clean_content)
+            ren_old, ren_new = extract_rename_player(clean_content)
 
             # Si se detectó una transferencia de custodia física (ej: 'Jinete le pasó 5 darks a Camarlengo')
             if trans_to and not has_image and (not intent_data or intent_data.get("intent") in ["CHAT", "PAY_DARK", "TRANSFER_CUSTODY"]):
@@ -3003,6 +3059,13 @@ async def on_message(message: discord.Message):
                     "from_holder": trans_from,
                     "to_holder": trans_to,
                     "darks": trans_darks or 1
+                }
+            # Si se detectó cambio de nombre / renombrar (ej: 'Cambiale el nombre a pepe y ponele Peperulo')
+            elif ren_old and ren_new and not has_image and (not intent_data or intent_data.get("intent") in ["CHAT", "RENAME_PLAYER", "LINK_PLAYERS"]):
+                intent_data = {
+                    "intent": "RENAME_PLAYER",
+                    "pj_name": ren_old,
+                    "target_pj": ren_new
                 }
             # Si se detectó una orden de pago en lenguaje natural (ej: 'Jinete le pagó dark a ...')
             elif payout_recips and not has_image and (not intent_data or intent_data.get("intent") in ["CHAT", "PAY_DARK"]):
@@ -3086,7 +3149,7 @@ async def on_message(message: discord.Message):
                 intent = intent_data.get("intent", "CHAT")
 
                 # RESTRICCIÓN DE ACCIONES ADMINISTRATIVAS:
-                ADMIN_INTENTS = {"NEW_EVENT", "PAY_DARK", "SET_CUSTODY", "ADD_CUSTODY", "TRANSFER_CUSTODY", "RESET_VAULT", "DELETE_PLAYER", "SET_POINTS", "IMPORT_POINTS", "RESET_HISTORY"}
+                ADMIN_INTENTS = {"NEW_EVENT", "PAY_DARK", "SET_CUSTODY", "ADD_CUSTODY", "TRANSFER_CUSTODY", "RESET_VAULT", "DELETE_PLAYER", "SET_POINTS", "IMPORT_POINTS", "RESET_HISTORY", "LINK_PLAYERS", "RENAME_PLAYER"}
                 if (intent in ADMIN_INTENTS or has_image) and not check_is_admin(message.author, message.guild):
                     await message.reply(
                         "⛔ **Permiso denegado:** Solo los administradores autorizados pueden cargar capturas de eventos, modificar puntos o registrar pagos.\n"
@@ -3101,7 +3164,7 @@ async def on_message(message: discord.Message):
                         if qi in ["LIST_POINTS", "LIST_DEBTS", "VAULT_STATUS"] and qi not in multi_queries:
                             multi_queries.append(qi)
 
-                MUTATION_INTENTS = {"NEW_EVENT", "PAY_DARK", "SET_CUSTODY", "ADD_CUSTODY", "TRANSFER_CUSTODY", "RESET_VAULT", "DELETE_PLAYER", "SET_POINTS", "IMPORT_POINTS", "RESET_HISTORY", "SPIN_ROULETTE"}
+                MUTATION_INTENTS = {"NEW_EVENT", "PAY_DARK", "SET_CUSTODY", "ADD_CUSTODY", "TRANSFER_CUSTODY", "RESET_VAULT", "DELETE_PLAYER", "SET_POINTS", "IMPORT_POINTS", "RESET_HISTORY", "SPIN_ROULETTE", "LINK_PLAYERS", "RENAME_PLAYER"}
                 if len(multi_queries) > 1 and not has_image and intent not in MUTATION_INTENTS:
                     embeds_to_send = []
                     for qi in multi_queries:
@@ -3131,8 +3194,14 @@ async def on_message(message: discord.Message):
                             lp1 = act.get("pj_name")
                             lp2 = act.get("target_pj")
                             if lp1 and lp2:
-                                ok_l, msg_l, inf_l = db.link_players(lp1, lp2, unified_name=lp2)
+                                ok_l, msg_l, inf_l = db.link_players(lp1, lp2)
                                 action_results.append(f"👥 {msg_l}")
+                        elif act_intent == "RENAME_PLAYER":
+                            rp1 = act.get("pj_name")
+                            rp2 = act.get("target_pj")
+                            if rp1 and rp2:
+                                ok_r, msg_r, inf_r = db.rename_player(rp1, rp2)
+                                action_results.append(f"✏️ {msg_r}")
                         elif act_intent == "SET_POINTS":
                             p_pj = act.get("pj_name")
                             p_pts = act.get("points")
@@ -3626,7 +3695,7 @@ async def on_message(message: discord.Message):
                         if not check_is_admin(message.author, message.guild):
                             await message.reply("⛔ **Permiso denegado:** Solo los administradores autorizados pueden vincular personajes.")
                             return
-                        ok, msg, info = db.link_players(p1, p2, unified_name=p2)
+                        ok, msg, info = db.link_players(p1, p2)
                         await auto_backup_database()
                         embed = discord.Embed(
                             title="👥 Vinculación de Personajes",
@@ -3636,12 +3705,41 @@ async def on_message(message: discord.Message):
                         if ok and info.get("canonical"):
                             embed.add_field(name="🆔 Perfil Unificado", value=f"**`{info['canonical']}`**", inline=True)
                             embed.add_field(name="⭐ Puntos Totales", value=f"**{info.get('combined_points', 0)} pts**", inline=True)
-                            embed.add_field(name="🏛️ Clan", value=f"{info.get('clan', 'Mentores')}", inline=True)
+                            embed.add_field(name="🏛️ Clan", value=f"{info.get('clan', 'DxMENTOR')}", inline=True)
                             embed.set_footer(text="A partir de ahora, cualquier punto o consulta con cualquiera de los nombres se asociará a este perfil.")
                         await message.reply(embed=embed)
                         return
                     else:
                         await message.reply("❓ No pude identificar claramente los dos personajes a vincular (ej: `'vincula a Themami con Stormfly, son la misma persona'`).")
+                        return
+
+                # 14c. RENOMBRAR PERSONAJE (CAMBIAR NOMBRE)
+                elif intent == "RENAME_PLAYER":
+                    p1 = intent_data.get("pj_name")
+                    p2 = intent_data.get("target_pj") or intent_data.get("to_holder") or intent_data.get("holder")
+                    if not p1 or not p2:
+                        p1, p2 = extract_rename_player(clean_content)
+
+                    if p1 and p2:
+                        if not check_is_admin(message.author, message.guild):
+                            await message.reply("⛔ **Permiso denegado:** Solo los administradores autorizados pueden renombrar personajes.")
+                            return
+                        ok, msg, info = db.rename_player(p1, p2)
+                        if ok:
+                            await auto_backup_database()
+                        embed = discord.Embed(
+                            title="✏️ Cambio de Nombre de Personaje",
+                            description=msg,
+                            color=discord.Color.green() if ok else discord.Color.red()
+                        )
+                        if ok and info.get("canonical"):
+                            embed.add_field(name="🆔 Nuevo Nombre", value=f"**`{info['canonical']}`**", inline=True)
+                            embed.add_field(name="⭐ Puntos Totales", value=f"**{info.get('combined_points', 0)} pts**", inline=True)
+                            embed.add_field(name="🏛️ Clan", value=f"{info.get('clan', 'DxMENTOR')}", inline=True)
+                        await message.reply(embed=embed)
+                        return
+                    else:
+                        await message.reply("❓ No pude identificar el nombre actual y el nuevo nombre (ej: `'Cambiale el nombre a pepe y ponele Peperulo'` o `/renombrar`).")
                         return
 
                 # 15. CHAT / PREGUNTA GENERAL

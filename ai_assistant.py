@@ -81,10 +81,14 @@ Posibles intenciones ("intent"):
     - ¡REGLA CRÍTICA!: Esto es una TRANSFERENCIA DE INVENTARIO FÍSICO / CUSTODIA. NO resta puntos por cobrar a nadie ni es un cobro de evento.
 16. "VAULT_HISTORY": El usuario pide ver el historial de movimientos, transferencias o cargas del baúl/almacenamiento de darks (ej: "historial del baúl", "movimientos del baúl", "historial de darks almacenadas", "ver transferencias de darks").
 17. "RESET_VAULT": El usuario pide vaciar, limpiar o reiniciar a cero el baúl/almacenamiento de darks (ej: "reiniciar baúl", "vaciar baúl", "poner a cero el baúl de darks", "borrar darks almacenadas para empezar de cero").
-18. "LINK_PLAYERS": El usuario indica que dos personajes son de la misma persona o pide vincularlos/unirlos (ej: "vincula a Themami con Stormfly, son la misma persona", "uní las cuentas de Spark y Chispa", "Themami y Stormfly son el mismo jugador", "asociá a Themami con Stormfly", "FairyElf es FairyLow, unifica esos puntos").
-    - "pj_name": primer personaje (ej: "FairyElf").
-    - "target_pj": segundo personaje (ej: "FairyLow").
-19. "CHAT": Saludo, ayuda o pregunta general.
+18. "LINK_PLAYERS": El usuario indica que dos personajes son de la misma persona o pide vincularlos/unirlos (ej: "vincula a Themami con Stormfly, son la misma persona", "uní las cuentas de Spark y Chispa", "Themami y Stormfly son el mismo jugador", "asociá a Themami con Stormfly", "FairyElf es FairyLow, unifica esos puntos", "Peperulo y pepe son la misma persona").
+    - "pj_name": primer personaje (ej: "Peperulo").
+    - "target_pj": segundo personaje (ej: "pepe").
+19. "RENAME_PLAYER": El usuario pide cambiarle el nombre o renombrar a un personaje (ej: "Cambiale el nombre a pepe y ponele Peperulo", "renombrá a chimu como DLChiimu", "cambiá el nombre de pepe por Peperulo", "pepe está mal escrito, ponele Peperulo", "modificá el nombre de X a Y").
+    - ¡PROHIBIDO decir que no tenés función para renombrar! SIEMPRE devuelve intent "RENAME_PLAYER".
+    - "pj_name": nombre actual que se quiere cambiar (ej: "pepe").
+    - "target_pj": nuevo nombre que debe quedar (ej: "Peperulo").
+20. "CHAT": Saludo, ayuda o pregunta general.
 
 ¡REGLA CRÍTICA PARA ACCIONES MÚLTIPLES O COMBINADAS EN UN MISMO MENSAJE!:
 Si el mensaje del usuario contiene más de una instrucción o acción (por ejemplo: borrar varios personajes Y además vincular/unir otros, o borrar y fijar puntos, o registrar varios pedidos):
