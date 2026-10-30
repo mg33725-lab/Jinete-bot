@@ -85,12 +85,22 @@ def start_health_check_server():
 # PERSISTENCIA Y AUTO-BACKUP DE BASE DE DATOS EN LA NUBE (DISCORD)
 # ====================================================================
 
+DEFAULT_BACKUP_CHANNEL_ID = "1565777652210733198"
+
 async def auto_backup_database():
-    """Envía una copia de respaldo de argenmu.db al canal de backup si está configurado."""
-    backup_id = os.getenv("BACKUP_CHANNEL_ID")
+    """Envía una copia de respaldo de argenmu.db al canal #backups-bot para persistencia 24/7 en la nube."""
+    backup_id = os.getenv("BACKUP_CHANNEL_ID") or DEFAULT_BACKUP_CHANNEL_ID
     if not backup_id or not backup_id.strip().isdigit():
         return
     try:
+        # Volcar cualquier escritura pendiente de WAL dentro de argenmu.db antes de subirlo
+        try:
+            conn = db.get_connection()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            conn.close()
+        except Exception:
+            pass
+
         channel = bot.get_channel(int(backup_id.strip()))
         if not channel:
             channel = await bot.fetch_channel(int(backup_id.strip()))
@@ -100,11 +110,11 @@ async def auto_backup_database():
                 file=discord.File("argenmu.db", filename="argenmu.db")
             )
     except Exception as e:
-        logger.warning(f"Error en auto_backup_database: {e}")
+        print(f"Error en auto_backup_database: {e}", flush=True)
 
 async def auto_restore_database_on_boot():
-    """Restaura la última versión de argenmu.db desde el canal de backup si existe."""
-    backup_id = os.getenv("BACKUP_CHANNEL_ID")
+    """Restaura la última versión de argenmu.db desde el canal #backups-bot si existe."""
+    backup_id = os.getenv("BACKUP_CHANNEL_ID") or DEFAULT_BACKUP_CHANNEL_ID
     if not backup_id or not backup_id.strip().isdigit():
         return
     try:
@@ -116,10 +126,17 @@ async def auto_restore_database_on_boot():
                 for att in msg.attachments:
                     if att.filename == "argenmu.db":
                         print(f"📥 Restaurando última base de datos desde Discord ({att.filename}, {att.size} bytes)...", flush=True)
+                        for ext in ("-wal", "-shm"):
+                            wal_p = f"argenmu.db{ext}"
+                            if os.path.exists(wal_p):
+                                try:
+                                    os.remove(wal_p)
+                                except Exception:
+                                    pass
                         await att.save("argenmu.db")
                         return
     except Exception as e:
-        logger.warning(f"Error en auto_restore_database_on_boot: {e}")
+        print(f"Error en auto_restore_database_on_boot: {e}", flush=True)
 
 # ====================================================================
 # CONTROL DE PERMISOS DE ADMINISTRADOR (SOLO USUARIOS AUTORIZADOS)
@@ -376,10 +393,10 @@ def extract_event_details(text: str) -> Tuple[Optional[int], Optional[str], Opti
         darks = word_to_num.get(val, int(val) if val.isdigit() else 1)
 
     # 2. Custodia / Holder
-    m_holder = re.search(r'(?:tiene|las tiene|la tiene|lo tiene|quedaron a|custodia de|se las qued[oó]|se la qued[oó]|se lo qued[oó])\s+([A-Za-zÀ-ÿ0-9_\[\]/\-]+)', text, re.IGNORECASE)
+    m_holder = re.search(r'(?:tiene|las tiene|la tiene|lo tiene|quedaron a|custodia de|se las qued[oó]|se la qued[oó]|se lo qued[oó])\s+(?:(?:sv\s*\d+|srv\s*\d+|server\s*\d+)\s+)?([A-Za-zÀ-ÿ0-9_\[\]/\-]+)', text, re.IGNORECASE)
     if m_holder:
         cand = m_holder.group(1).translate(str.maketrans("áéíóúÁÉÍÓÚ", "aeiouAEIOU"))
-        if cand.lower() not in ['las', 'los', 'la', 'el', 'dos', 'tres', 'darks', 'un', 'una']:
+        if cand.lower() not in ['las', 'los', 'la', 'el', 'dos', 'tres', 'darks', 'un', 'una', 'sv1', 'sv2', 'sv3', 'sv4', 'srv1', 'srv2', 'srv3', 'srv4']:
             holder = cand
     if not holder:
         m_holder2 = re.search(r'tiene\s+([A-Za-zÀ-ÿ0-9_\[\]/\-]+)\s+las', text, re.IGNORECASE)
@@ -1338,6 +1355,7 @@ class PartyReviewView(discord.ui.View):
             registered_by=interaction.user.name,
             holder=self.holder
         )
+        await auto_backup_database()
 
         def make_file():
             if gif_path and os.path.exists(gif_path):
@@ -3289,6 +3307,7 @@ async def on_message(message: discord.Message):
                         pj = recipients[0]
                         ok, msg = db.record_payout(pj, darks, message.author.name, "Registrado vía chat", from_holder=from_holder)
                         if ok:
+                            await auto_backup_database()
                             player = db.get_player(pj)
                             p_name = player["pj_name"] if player else pj
                             p_rem = player["current_points"] if player else 0
@@ -3338,6 +3357,7 @@ async def on_message(message: discord.Message):
                             color=discord.Color.green() if success_lines else discord.Color.red()
                         )
                         if success_lines:
+                            await auto_backup_database()
                             chunk = "\n".join(success_lines)
                             if len(chunk) > 1000:
                                 chunk = chunk[:990] + "\n...(más)"
@@ -3380,6 +3400,7 @@ async def on_message(message: discord.Message):
                                 msgs.append(f"• **{resolved_h}**: **{d} Dark{'s' if d != 1 else ''}**")
                             else:
                                 msgs.append(f"• ⚠️ {h}: {msg}")
+                        await auto_backup_database()
                         embed = discord.Embed(
                             title="🏛️ Custodia de Darks Actualizada",
                             description="Se registraron las siguientes joyas en almacenamiento del baúl:\n\n" + "\n".join(msgs),
@@ -3398,6 +3419,8 @@ async def on_message(message: discord.Message):
                     darks = max(1, int(intent_data.get("darks", 1)))
                     if holder:
                         ok, msg = db.add_dark_custody(holder, darks, message.author.name)
+                        if ok:
+                            await auto_backup_database()
                         embed = discord.Embed(title="🏛️ Custodia Ajustada", description=msg, color=discord.Color.green())
                         await message.reply(embed=embed)
                         return
@@ -3421,6 +3444,8 @@ async def on_message(message: discord.Message):
                             return
 
                     ok, msg = db.transfer_dark_custody(from_h, to_h, darks, message.author.name)
+                    if ok:
+                        await auto_backup_database()
                     embed = discord.Embed(
                         title="🏛️ Transferencia de Custodia en Baúl",
                         description=msg,
