@@ -136,7 +136,7 @@ def init_db():
     conn.close()
 
 def resolve_clan_name(clan: Optional[str]) -> str:
-    """Normaliza nombres de clanes para que DxMENTOR y PolloKill nunca se dupliquen o difieran por mayúsculas."""
+    """Normaliza nombres de clanes para que DxMENTOR, PolloKill y Hoz nunca se dupliquen o difieran por mayúsculas."""
     if not clan:
         return "DxMENTOR"
     c = str(clan).strip()
@@ -147,6 +147,8 @@ def resolve_clan_name(clan: Optional[str]) -> str:
         return "PolloKill"
     if "mentor" in low:
         return "DxMENTOR"
+    if low == "hoz" or re.search(r'\bhoz\b', low):
+        return "Hoz"
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -763,12 +765,13 @@ def get_pending_debts(clan: Optional[str] = None) -> List[Dict]:
     conn = get_connection()
     cursor = conn.cursor()
     if clan:
+        norm_clan = resolve_clan_name(clan.strip())
         cursor.execute("""
             SELECT pj_name, discord_id, current_points, darks_paid, events_attended, clan
             FROM players
             WHERE current_points >= 10 AND clan = ? COLLATE NOCASE
             ORDER BY current_points DESC
-        """, (clan.strip(),))
+        """, (norm_clan,))
     else:
         cursor.execute("""
             SELECT pj_name, discord_id, current_points, darks_paid, events_attended, clan
@@ -789,7 +792,7 @@ def get_pending_debts(clan: Optional[str] = None) -> List[Dict]:
             "rem_points": rem_points,
             "darks_paid": r["darks_paid"],
             "events_attended": r["events_attended"],
-            "clan": r["clan"] if "clan" in r.keys() and r["clan"] else "Mentores"
+            "clan": r["clan"] if "clan" in r.keys() and r["clan"] else "DxMENTOR"
         })
     conn.close()
     return debts
@@ -798,13 +801,14 @@ def get_all_players_ranking(limit: int = 50, clan: Optional[str] = None) -> List
     conn = get_connection()
     cursor = conn.cursor()
     if clan:
+        norm_clan = resolve_clan_name(clan.strip())
         cursor.execute("""
             SELECT pj_name, discord_id, current_points, total_points_history, darks_paid, events_attended, raffle_streak_lost, clan
             FROM players
             WHERE clan = ? COLLATE NOCASE
             ORDER BY current_points DESC, events_attended DESC
             LIMIT ?
-        """, (clan.strip(), limit))
+        """, (norm_clan, limit))
     else:
         cursor.execute("""
             SELECT pj_name, discord_id, current_points, total_points_history, darks_paid, events_attended, raffle_streak_lost, clan

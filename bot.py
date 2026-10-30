@@ -150,7 +150,7 @@ GAME_STOP_WORDS = {
     'cc', 'cc1', 'cc2', 'cc3', 'cc4', 'cc5', 'cc6',
     'sv', 'sv1', 'sv2', 'sv3', 'sv4', 'sv5', 'server', 'srv', 'sub',
     'blood', 'castle', 'chaos', 'frozen', 'invasion', 'kundun', 'selupan', 'medusa',
-    'dxmentor', 'jinete', 'mentores', 'pollokill', 'clan', 'alianza',
+    'dxmentor', 'jinete', 'mentores', 'pollokill', 'hoz', 'clan', 'alianza',
     'obtuviste', 'ancient', 'coin', 'satan', 'angel', 'guardian', 'seal', 'sustenance',
     'jewel', 'bless', 'soul', 'life', 'creation', 'zen', 'box',
     'fps', 'ping', 'level', 'lvl', 'reset', 'resets',
@@ -201,8 +201,10 @@ def extract_party2_names(txt: str) -> List[str]:
                     found.append(t)
     return found
 
+KNOWN_ALLIANCE_CLANS = {'dxmentor', 'mentores', 'pollokill', 'hoz'}
+
 def parse_clan_characters(text: str) -> Dict[str, List[str]]:
-    """Extrae personajes organizados por clan desde textos con una o varias listas explícitas (ej: Mentores y Otro Clan)."""
+    """Extrae personajes organizados por clan desde textos con una o varias listas explícitas (ej: DxMENTOR, PolloKill, Hoz)."""
     clan_map = {}
     current_clan = None
     has_explicit_clan = False
@@ -216,8 +218,17 @@ def parse_clan_characters(text: str) -> Dict[str, List[str]]:
         m_otro_clan = re.match(r"^(?:otro\s+clan|el\s+otro\s+clan|aliados?|clan\s+aliado)\s*[:\-]?(.*)$", cleaned, re.IGNORECASE)
         m_inline_clan = re.match(r"^(?:clan|alianza)\s+([A-Za-z0-9_]{3,20})\s*[:\-]?(.*)$", cleaned, re.IGNORECASE)
         m_header = re.match(r"^(?:clan\s+|alianza\s+|party\s*\d*\s*[:\-]?\s*)?([A-Za-z0-9_\s]{2,25})\s*[:\-]\s*$", cleaned, re.IGNORECASE)
+        m_known_clan = re.match(r"^(?:clan\s+)?(dxmentor|mentores|pollokill|hoz)\b\s*[:\-]?(.*)$", cleaned, re.IGNORECASE)
 
-        if m_otro_clan:
+        if m_known_clan:
+            current_clan = db.resolve_clan_name(m_known_clan.group(1))
+            has_explicit_clan = True
+            rest = m_known_clan.group(2).strip()
+            if rest:
+                cleaned = rest
+            else:
+                continue
+        elif m_otro_clan:
             current_clan = "Otro Clan"
             has_explicit_clan = True
             rest = m_otro_clan.group(1).strip()
@@ -226,9 +237,9 @@ def parse_clan_characters(text: str) -> Dict[str, List[str]]:
             else:
                 continue
         elif m_inline_clan:
-            cand = m_inline_clan.group(1).strip().title()
-            if cand.lower() not in GAME_STOP_WORDS:
-                current_clan = cand
+            cand = m_inline_clan.group(1).strip()
+            if cand.lower() in KNOWN_ALLIANCE_CLANS or cand.lower() not in GAME_STOP_WORDS:
+                current_clan = db.resolve_clan_name(cand)
                 has_explicit_clan = True
             rest = m_inline_clan.group(2).strip()
             if rest:
@@ -239,15 +250,9 @@ def parse_clan_characters(text: str) -> Dict[str, List[str]]:
             cand = m_header.group(1).strip()
             if cand.lower().startswith("clan "):
                 cand = cand[5:].strip()
-            if cand.lower() not in GAME_STOP_WORDS and not cand.isdigit() and len(cand) >= 3:
-                current_clan = cand.title()
+            if (cand.lower() in KNOWN_ALLIANCE_CLANS or cand.lower() not in GAME_STOP_WORDS) and not cand.isdigit() and len(cand) >= 3:
+                current_clan = db.resolve_clan_name(cand)
                 has_explicit_clan = True
-                continue
-        elif re.match(r"^(mentores|clan\s*mentores)\b", cleaned, re.IGNORECASE):
-            current_clan = "Mentores"
-            has_explicit_clan = True
-            cleaned = re.sub(r"^(mentores|clan\s*mentores)\s*[:\-]?", "", cleaned, flags=re.IGNORECASE).strip()
-            if not cleaned:
                 continue
 
         # Solo procesar personajes si estamos dentro de una sección explícitamente declarada de clan
@@ -917,7 +922,7 @@ class AddPjModal(discord.ui.Modal, title="Agregar Personajes a Party"):
     )
     clan_input = discord.ui.TextInput(
         label="Clan al que pertenecen",
-        placeholder="DxMENTOR o PolloKill",
+        placeholder="DxMENTOR, PolloKill o Hoz",
         required=False,
         default="DxMENTOR",
         max_length=40
@@ -1065,8 +1070,8 @@ class EditPjModal(discord.ui.Modal, title="Corregir o Sacar PJ"):
         max_length=20
     )
     clan_new = discord.ui.TextInput(
-        label="Clan (DxMENTOR / PolloKill, opcional)",
-        placeholder="Ej: DxMENTOR o PolloKill",
+        label="Clan (DxMENTOR / PolloKill / Hoz, opcional)",
+        placeholder="Ej: DxMENTOR, PolloKill o Hoz",
         required=False,
         max_length=40
     )
@@ -1760,9 +1765,11 @@ def parse_points_line(line: str) -> Optional[Tuple[str, int, Optional[str], Opti
         clan = 'PolloKill'
     elif re.search(r'[\(\[]?\s*(?:dxmentor|mentores?)\s*[\)\]]?', clean, re.I):
         clan = 'DxMENTOR'
+    elif re.search(r'[\(\[]?\s*hoz\s*[\)\]]?', clean, re.I):
+        clan = 'Hoz'
 
     # Remove clan tags and arrow annotations
-    clean = re.sub(r'[\(\[]\s*(?:pollokill|dxmentor|mentores?)\s*[\)\]]', '', clean, flags=re.I)
+    clean = re.sub(r'[\(\[]\s*(?:pollokill|dxmentor|mentores?|hoz)\s*[\)\]]', '', clean, flags=re.I)
     clean = re.sub(r'➔.*$', '', clean)
     clean = re.sub(r'🎁.*$', '', clean)
     clean = clean.strip(' :;-,')
@@ -1861,7 +1868,7 @@ class QuickSetPointsModal(discord.ui.Modal, title="✏️ Ajustar Puntos de PJ")
     )
     clan_input = discord.ui.TextInput(
         label="Clan (opcional)",
-        placeholder="Ej: DxMENTOR o PolloKill",
+        placeholder="Ej: DxMENTOR, PolloKill o Hoz",
         required=False,
         max_length=40
     )
@@ -2495,7 +2502,7 @@ async def cmd_sorteo_directo(
         await interaction.followup.send(embed=embed, view=view)
 
 @bot.tree.command(name="deudas", description="Lista los jugadores que acumularon 10 o más puntos y tienen darks pendientes de cobro.")
-@app_commands.describe(clan="Filtrar por clan específico (opcional, ej: Mentores)")
+@app_commands.describe(clan="Filtrar por clan específico (opcional, ej: DxMENTOR, PolloKill o Hoz)")
 async def cmd_deudas(interaction: discord.Interaction, clan: Optional[str] = None):
     import ai_assistant
     embed = ai_assistant.build_debts_embed(clan=clan)
@@ -2562,7 +2569,7 @@ async def cmd_pagar(
 @bot.tree.command(name="ranking", description="Muestra la tabla de clasificación de puntos y participación de los jugadores.")
 @app_commands.describe(
     limite="Cantidad de jugadores a mostrar (por defecto 25, hasta 100)",
-    clan="Filtrar por clan específico (opcional, ej: DxMENTOR o PolloKill)"
+    clan="Filtrar por clan específico (opcional, ej: DxMENTOR, PolloKill o Hoz)"
 )
 async def cmd_ranking(interaction: discord.Interaction, limite: Optional[int] = 25, clan: Optional[str] = None):
     limite = max(5, min(limite or 25, 100))
@@ -2745,14 +2752,16 @@ async def cmd_eliminar_pj(interaction: discord.Interaction, personaje: str):
     )
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="ajustar_puntos", description="Modifica manualmente los puntos actuales de un personaje.")
-@app_commands.describe(personaje="Nombre del personaje", puntos="Nuevo puntaje actual")
-async def cmd_ajustar_puntos(interaction: discord.Interaction, personaje: str, puntos: int):
+@bot.tree.command(name="ajustar_puntos", description="Modifica manualmente los puntos actuales o el clan de un personaje.")
+@app_commands.describe(personaje="Nombre del personaje", puntos="Nuevo puntaje actual", clan="Clan opcional (DxMENTOR, PolloKill o Hoz)")
+async def cmd_ajustar_puntos(interaction: discord.Interaction, personaje: str, puntos: int, clan: Optional[str] = None):
     if not check_is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden modificar puntos manualmente.", ephemeral=True)
         return
 
-    ok, msg = db.update_player_points(personaje, puntos)
+    ok, msg = db.update_player_points(personaje, puntos, clan=clan)
+    if ok:
+        await auto_backup_database()
     embed = discord.Embed(
         title="✏️ Ajustar Puntos",
         description=msg,
@@ -3229,8 +3238,9 @@ async def on_message(message: discord.Message):
 
                 # 1. LISTA GENERAL DE PUNTOS
                 if intent == "LIST_POINTS":
-                    embed = ai_assistant.build_points_list_embed()
-                    view = PointsListView(author_id=message.author.id, clan=None, limit=100)
+                    q_clan = intent_data.get("clan")
+                    embed = ai_assistant.build_points_list_embed(clan=q_clan)
+                    view = PointsListView(author_id=message.author.id, clan=q_clan, limit=100)
                     reply_msg = await message.reply(embed=embed, view=view)
                     view.message = reply_msg
                     return
@@ -3455,7 +3465,8 @@ async def on_message(message: discord.Message):
 
                 # 8. QUIÉN TIENE DARKS POR COBRAR (DEUDAS)
                 elif intent == "LIST_DEBTS":
-                    embed = ai_assistant.build_debts_embed()
+                    q_clan = intent_data.get("clan")
+                    embed = ai_assistant.build_debts_embed(clan=q_clan)
                     await message.reply(embed=embed)
                     return
 

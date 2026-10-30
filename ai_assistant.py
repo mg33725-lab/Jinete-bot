@@ -23,7 +23,7 @@ Existen dos conceptos completamente DIFERENTES sobre las Darks:
 2. RECOMPENSAS POR PUNTOS: Miembros que sumaron 10 o más puntos jugando eventos y el clan les debe pagar/entregar una Dark.
 
 Posibles intenciones ("intent"):
-1. "LIST_POINTS": El usuario pide la lista general de puntos ganados, ranking o puntos acumulados.
+1. "LIST_POINTS": El usuario pide la lista general de puntos ganados, ranking o puntos acumulados (puede filtrar por "clan" si el usuario pide los puntos de un clan específico como "DxMENTOR", "PolloKill" o "Hoz").
 2. "PLAYER_INFO": El usuario pregunta por un personaje específico (ej: "cuantos puntos tiene masterr", "info de Buferit4").
 3. "PLAYER_HISTORY": El usuario pide el historial de eventos de un personaje (ej: "qué eventos jugó masterr", "historial de Buferit4").
 4. "PAY_DARK": El usuario dice que ya se le pagó o entregó una dark a uno o varios jugadores que la tenían ganada por puntos (ej: "ya le pague una dark a masterr", "Jinete le pagó a masterr", "Jinete12 ya le pagó dark a DlChimu, Peperulo, Jinete12, Storfly, Carlitos Gi y Cheteelf", "le dimos 2 darks a Titan").
@@ -36,7 +36,7 @@ Posibles intenciones ("intent"):
    - Requiere: "holder" (personaje que las guarda físicamente) y "darks" (cantidad).
 6. "ADD_CUSTODY": El usuario dice que alguien levantó o guardó más darks en su almacén (ej: "sumale 1 dark a masterr que la agarró").
 7. "VAULT_STATUS": El usuario pregunta por el ALMACENAMIENTO físico, quién las guarda o cuántas hay en baúles (ej: "quién tiene las darks?", "cuántas darks hay guardadas?", "cómo está el baúl?").
-8. "LIST_DEBTS": El usuario pregunta a quién hay que PAGARLE por sus puntos ganados (ej: "a quién le debemos darks?", "quién tiene para cobrar?").
+8. "LIST_DEBTS": El usuario pregunta a quién hay que PAGARLE por sus puntos ganados (ej: "a quién le debemos darks?", "quién tiene para cobrar?", "deudas de Hoz").
 9. "NEW_EVENT": Carga de un evento jugado (ej: "Frozen de las 13 40. Cayeron 2 darks. Tiene Peperulo las dos darks", "BC 10:30 cayeron 2 darks", o mensajes con capturas de party).
     - ¡PRIORIDAD ABSOLUTA!: Si el mensaje adjunta una foto de party o relata un evento jugado ("cayeron X darks", "Frozen", "BC", etc.), el intent SIEMPRE ES "NEW_EVENT", INCLUSO si menciona quién guarda las darks físicas (ej: "Tiene Peperulo las dos darks"). En este caso asigna "darks": 2, "event_name": "Frozen 13:40", "holder": "Peperulo", y los "characters" de la captura. NO lo clasifiques como SET_CUSTODY.
     - ¡REGLA FUNDAMENTAL DE INTEGRACIÓN (PARTY 1 EN FOTO + PARTY 2 EN TEXTO)!:
@@ -53,8 +53,8 @@ Posibles intenciones ("intent"):
       - DEBES extraer los personajes de TODAS las capturas y colocarlos a TODOS juntos en el array principal "characters".
       - Si se especifica en texto una party adicional (ej: "Party 3: ..."), súmala a su party correspondiente.
     - DIFERENCIACIÓN DE CLANES:
-      Los clanes oficiales son ÚNICAMENTE "DxMENTOR" y "PolloKill". NUNCA devuelvas "DxMentor", "dxmentor" o "Mentores", siempre normaliza a "DxMENTOR" o "PolloKill".
-      Podés retornar en "clans" un diccionario `{"DxMENTOR": ["Pj1", "Pj2"], "PolloKill": ["Pj3", "Pj4"]}`.
+      Los clanes oficiales de la alianza son ÚNICAMENTE "DxMENTOR", "PolloKill" y "Hoz". NUNCA devuelvas "DxMentor", "dxmentor" o "Mentores", siempre normaliza a "DxMENTOR", "PolloKill" o "Hoz".
+      Podés retornar en "clans" un diccionario `{"DxMENTOR": ["Pj1", "Pj2"], "PolloKill": ["Pj3", "Pj4"], "Hoz": ["Pj5"]}`.
     - ¡FILTRADO ESTRICTO DE CAPTURAS DE JUEGO (MU ONLINE / ARGENMU)!:
       1. La ventana de party aparece en el recuadro SUPERIOR DERECHO de la pantalla con las barras de vida. Esos son los participantes principales.
       2. Si hay miembros en el escenario 3D o en el chat que también participaron del evento, inclúyelos ÚNICAMENTE si son personajes reales (ej: Stormfly, BoniElf, etc.).
@@ -65,9 +65,9 @@ Posibles intenciones ("intent"):
          - Textos de interfaz como "FPS", "PING", "Level", "Server".
 10. "DELETE_PLAYER": El usuario pide eliminar o borrar uno o varios personajes (ej: "borrá a Player_1", "eliminá a Minocho99, EK_agus y Elanor", "sacá a ese pj").
     - Requiere: "pj_name" (personaje a borrar) o "characters": ["pj1", "pj2", ...] (si son varios personajes a borrar).
-11. "SET_POINTS": El usuario pide ajustar, cambiar o fijar los puntos, clan o darks cobradas de uno o varios personajes manualmente (ej: "cambiale los puntos a masterr a 8", "poné a Camarlengo con 32 puntos (PolloKill)", "ajustá a Bonielf en 26 puntos y 4 darks cobradas", "cambiá el clan de Duraznita a PolloKill").
+11. "SET_POINTS": El usuario pide ajustar, cambiar o fijar los puntos, clan o darks cobradas de uno o varios personajes manualmente (ej: "cambiale los puntos a masterr a 8", "poné a Camarlengo con 32 puntos (PolloKill)", "ajustá a Bonielf en 26 puntos y 4 darks cobradas", "cambiá el clan de Duraznita a PolloKill", "pasá a X al clan Hoz").
     - Requiere: "pj_name" (personaje).
-    - Opcional: "points" (puntos a fijar), "clan" ("DxMENTOR" o "PolloKill") y "darks_paid" (número de darks cobradas).
+    - Opcional: "points" (puntos a fijar), "clan" ("DxMENTOR", "PolloKill" o "Hoz") y "darks_paid" (número de darks cobradas).
 12. "IMPORT_POINTS": El usuario pasa una lista manual de personajes con sus puntos (en texto o en imagen/foto de excel, whatsapp o bloc de notas) para cargarlos o sumarlos.
     - Requiere: "import_items": [{"pj_name": "...", "points": 10, "clan": "DxMENTOR", "darks_paid": 0}, ...]
     - "mode": "SET" (si dice reemplazar, fijar, actualizar, corregir o lista actual) o "ADD" (si dice sumar o agregar).
