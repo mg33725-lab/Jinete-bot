@@ -2590,19 +2590,24 @@ async def cmd_pagar(
     clan="Filtrar por clan específico (opcional, ej: DxMENTOR, PolloKill o Hoz)"
 )
 async def cmd_ranking(interaction: discord.Interaction, limite: Optional[int] = 25, clan: Optional[str] = None):
+    try:
+        await interaction.response.defer()
+    except Exception:
+        pass
     limite = max(5, min(limite or 25, 100))
     import ai_assistant
     embed = ai_assistant.build_points_list_embed(clan=clan, limit=limite)
     view = PointsListView(author_id=interaction.user.id, clan=clan, limit=limite)
-    await interaction.response.send_message(embed=embed, view=view)
-    try:
-        view.message = await interaction.original_response()
-    except Exception:
-        pass
+    msg = await interaction.followup.send(embed=embed, view=view)
+    view.message = msg
 
 @bot.tree.command(name="perfil", description="Consulta las estadísticas, puntos y darks de un personaje.")
 @app_commands.describe(personaje="Nombre del personaje a consultar")
 async def cmd_perfil(interaction: discord.Interaction, personaje: str):
+    try:
+        await interaction.response.defer()
+    except Exception:
+        pass
     player = db.get_player(personaje)
     if not player:
         embed = discord.Embed(
@@ -2610,7 +2615,7 @@ async def cmd_perfil(interaction: discord.Interaction, personaje: str):
             description=f"El personaje **{personaje}** aún no ha participado en ningún evento registrado.",
             color=discord.Color.orange()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
         return
 
     darks_owed = player["current_points"] // 10
@@ -2631,7 +2636,7 @@ async def cmd_perfil(interaction: discord.Interaction, personaje: str):
     if player["discord_id"]:
         embed.set_footer(text=f"Vinculado a la cuenta de Discord <@{player['discord_id']}>")
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="vincular", description="Vincula tu cuenta de Discord con tu personaje in-game.")
 @app_commands.describe(personaje="Nombre de tu personaje principal en ArgenMU")
@@ -2654,7 +2659,10 @@ async def cmd_renombrar(interaction: discord.Interaction, nombre_actual: str, nu
     if not check_is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message("⛔ Permiso denegado: Solo los administradores autorizados pueden renombrar personajes.", ephemeral=True)
         return
-    await interaction.response.defer()
+    try:
+        await interaction.response.defer()
+    except Exception:
+        pass
     ok, msg, info = db.rename_player(nombre_actual, nuevo_nombre)
     if ok:
         await auto_backup_database()
@@ -2671,14 +2679,15 @@ async def cmd_renombrar(interaction: discord.Interaction, nombre_actual: str, nu
 
 @bot.tree.command(name="baul", description="Muestra quiénes tienen en custodia las darks físicas del gremio.")
 async def cmd_baul(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer()
+    except Exception:
+        pass
     import ai_assistant
     embed = ai_assistant.build_vault_embed()
     view = VaultView(author_id=interaction.user.id)
-    await interaction.response.send_message(embed=embed, view=view)
-    try:
-        view.message = await interaction.original_response()
-    except Exception:
-        pass
+    msg = await interaction.followup.send(embed=embed, view=view)
+    view.message = msg
 
 @bot.tree.command(name="custodia", description="Registra cuántas darks físicas tiene un miembro en su baúl/inventario.")
 @app_commands.describe(
