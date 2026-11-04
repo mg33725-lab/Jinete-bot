@@ -16,7 +16,7 @@ import socket
 from typing import Optional, List, Tuple, Union, Dict, Any
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 # Evitar múltiples instancias simultáneas del bot (bloqueo por socket local)
@@ -56,13 +56,23 @@ ACTIVE_CAPTURE_WAITERS = set()
 
 class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html; charset=utf-8')
-        self.end_headers()
-        self.wfile.write(b"<h1>Jinete Bot ArgenMU Online 24/7</h1><p>Status: OK</p>")
+        if bot.is_ready() and not bot.is_closed():
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html; charset=utf-8')
+            self.end_headers()
+            lat = f"{bot.latency*1000:.1f}ms" if bot.latency is not None else "N/A"
+            self.wfile.write(f"<h1>Jinete Bot ArgenMU Online 24/7</h1><p>Status: OK | Latencia Gateway: {lat}</p>".encode("utf-8"))
+        else:
+            self.send_response(503)
+            self.send_header('Content-type', 'text/html; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(b"<h1>Jinete Bot Gateway Disconnected</h1><p>Status: 503 Gateway Unavailable</p>")
 
     def do_HEAD(self):
-        self.send_response(200)
+        if bot.is_ready() and not bot.is_closed():
+            self.send_response(200)
+        else:
+            self.send_response(503)
         self.end_headers()
 
     def log_message(self, format, *args):
@@ -3795,13 +3805,35 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
 # ====================================================================
-# EVENTOS DEL BOT
+# EVENTOS DEL BOT Y WATCHDOG DE CONEXIÓN
 # ====================================================================
+
+@tasks.loop(seconds=60)
+async def gateway_watchdog():
+    """Monitorea que la conexión con Discord siga sana y no se congele silenciosamente."""
+    try:
+        if bot.is_closed():
+            print("⚠️ [Watchdog] La conexión de Discord está cerrada. Intentando reconectar...", flush=True)
+        elif not bot.is_ready():
+            print("⚠️ [Watchdog] El bot no está en estado Ready.", flush=True)
+        else:
+            lat = f"{bot.latency*1000:.0f}ms" if bot.latency is not None else "N/A"
+            # Log periódico cada 30 minutos o cuando la latencia sea anómala
+            if datetime.now().minute in (0, 30):
+                print(f"💓 [Watchdog] Conexión estable con Discord. Latencia: {lat}", flush=True)
+    except Exception as e:
+        print(f"⚠️ [Watchdog Error]: {e}", flush=True)
+
+@gateway_watchdog.before_loop
+async def before_gateway_watchdog():
+    await bot.wait_until_ready()
 
 @bot.event
 async def on_ready():
     await auto_restore_database_on_boot()
     db.init_db()
+    if not gateway_watchdog.is_running():
+        gateway_watchdog.start()
     # Registrar vistas persistentes para que los botones NUNCA expiren
     bot.add_view(PointsListView())
     bot.add_view(VaultView())
